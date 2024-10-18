@@ -1,13 +1,17 @@
 using namespace std;
 
-
-
 #include <iostream>
 #include <vector>
 #include <unordered_map>
-#include <cstdlib>  // For srand and rand
-#include <ctime>    // For time
-#include <fstream>  // For file handling
+#include <cstdlib>  
+#include <ctime>  
+#include <fstream>  
+#include <thread>
+#include <mutex>
+
+// Declare a mutex to protect shared resources
+std::mutex gridMutex;
+std::mutex ernMutex;
 
 
 class Cell {
@@ -43,23 +47,20 @@ private:
     int columns;
 
 public:
-    Grid(int rows, int columns); 
+    Grid(int rows, int columns);
     ~Grid() {
     }
     int getRows() const;
     int getColumns() const;
-    void initializeGrid(int numAliveCells); 
+    void initializeGrid(int numAliveCells);
     void updateGrid();
     T& getCell(int row, int col);
     bool getCellState(int row, int col) const;
     int countAliveNeighbors(int row, int col) const;
 
 
-
     bool operator==(const Grid<T>& other) const;
 
-
-    // Friend function to overload the << operator for printing the grid
     template<typename T>
     friend std::ostream& operator<<(std::ostream& os, const Grid& grid);
 };
@@ -82,7 +83,7 @@ T& Grid<T>::getCell(int row, int col) {
 template<typename T>
 void Grid<T>::initializeGrid(int numAliveCells) {
 
-    std::srand(static_cast<unsigned int>(std::time(0)));//seed based on time
+    std::srand(static_cast<unsigned int>(std::time(0)));
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < columns; j++) {
             grid[i][j].setDead();
@@ -92,7 +93,7 @@ void Grid<T>::initializeGrid(int numAliveCells) {
 
     int aliveCount = 0;
     while (aliveCount < numAliveCells) {
-        int randomRow = std::rand() % rows; //check this
+        int randomRow = std::rand() % rows;
         int randomCol = std::rand() % columns;
 
         if (!grid[randomRow][randomCol].isAlive()) {
@@ -107,20 +108,18 @@ void Grid<T>::initializeGrid(int numAliveCells) {
 template<typename T>
 bool Grid<T>::operator==(const Grid<T>& other) const {
     if (rows != other.rows || columns != other.columns) {
-        return false; // Grids have same dimensions.
+        return false;
     }
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < columns; j++) {
             if (grid[i][j].isAlive() != other.grid[i][j].isAlive()) {
-                return false; // if any cell differs, grids are not equal
+                return false;
             }
         }
     }
     return true;
 }
 
-
-// Overload the << operator for printing the grid
 template<typename T>
 std::ostream& operator<<(std::ostream& os, const Grid<T>& grid) {
     int displayRows = grid.getRows() * 2 + 1;
@@ -133,14 +132,14 @@ std::ostream& operator<<(std::ostream& os, const Grid<T>& grid) {
             }
             else if (i % 2 == 1 && j % 2 == 1) {
                 if (grid.getCellState(i / 2, j / 2)) {
-                    os << "O";  // Alive cell
+                    os << "O";
                 }
                 else {
-                    os << " ";  // Dead cell
+                    os << " ";
                 }
             }
             else {
-                os << " ";  // Space between dots and cells
+                os << " ";
             }
         }
         os << std::endl;
@@ -177,13 +176,11 @@ void Grid<T>::updateGrid() {
             int aliveNeighbors = countAliveNeighbors(i, j);
 
             if (grid[i][j].isAlive()) {
-                // live if fewer than 2 or more than 3 neighbor
                 if (aliveNeighbors < 2 || aliveNeighbors > 3) {
                     newGrid[i][j].setDead();
                 }
             }
             else {
-                // alive
                 if (aliveNeighbors == 3) {
                     newGrid[i][j].setAlive();
                 }
@@ -243,14 +240,12 @@ public:
                         grid.countAliveNeighbors(i, j + 1) == 3 &&
                         grid.countAliveNeighbors(i + 1, j) == 3 &&
                         grid.countAliveNeighbors(i + 1, j + 1) == 3) {
-                        return true; // block found
+                        return true;
                     }
-
-
                 }
             }
         }
-        return false; // block not found
+        return false;
     }
 
 
@@ -261,26 +256,48 @@ public:
     BeehivePattern() : Pattern<T>("Beehive") {}
 
     bool detectPattern(const Grid<T>& grid) const override {
-        for (int i = 0; i < grid.getRows() - 3; i++) {
-            for (int j = 0; j < grid.getColumns() - 5; j++) {
-                // Check Beehive shape:
-                if (grid.getCellState(i + 1, j + 2) && grid.getCellState(i + 1, j + 3) &&  // Top row
-                    grid.getCellState(i + 2, j + 1) && grid.getCellState(i + 2, j + 4) &&  // Middle row
-                    grid.getCellState(i + 3, j + 2) && grid.getCellState(i + 3, j + 3)) {  // Bottom row
-
-                    // Now use countAliveNeighbors to ensure that each Beehive cell has exactly 2 neighbors
-                    if (grid.countAliveNeighbors(i + 1, j + 2) == 2 &&  // Top-left cell
-                        grid.countAliveNeighbors(i + 1, j + 3) == 2 &&  // Top-right cell
-                        grid.countAliveNeighbors(i + 2, j + 1) == 2 &&  // Middle-left cell
-                        grid.countAliveNeighbors(i + 2, j + 4) == 2 &&  // Middle-right cell
-                        grid.countAliveNeighbors(i + 3, j + 2) == 2 &&  // Bottom-left cell
-                        grid.countAliveNeighbors(i + 3, j + 3) == 2) {  // Bottom-right cell
-                        return true;  // Valid Beehive found
-                    }
+        for (int i = 0; i < grid.getRows() - 4; i++) {
+            for (int j = 0; j < grid.getColumns() - 4; j++) {
+                if (doesHorizontalBeehiveExist(grid, i, j) || doesVerticalBeehiveExist(grid, i, j)) {
+                    return true;
                 }
             }
         }
-        return false;  // No Beehive pattern found
+        return false;
+    }
+
+private:
+    bool doesHorizontalBeehiveExist(const Grid<T>& grid, int row, int col) const {
+        if (row + 2 >= grid.getRows() || col + 3 >= grid.getColumns()) return false;
+        return
+            grid.getCellState(row, col + 1)
+            && grid.getCellState(row, col + 2)
+            && grid.getCellState(row + 1, col)
+            && grid.getCellState(row + 1, col + 3)
+            && grid.getCellState(row + 2, col + 1)
+            && grid.getCellState(row + 2, col + 2)
+            && grid.countAliveNeighbors(row, col + 1) == 2
+            && grid.countAliveNeighbors(row, col + 2) == 2
+            && grid.countAliveNeighbors(row + 1, col) == 2
+            && grid.countAliveNeighbors(row + 1, col + 3) == 2
+            && grid.countAliveNeighbors(row + 2, col + 1) == 2
+            && grid.countAliveNeighbors(row + 2, col + 2) == 2;
+    }
+    bool doesVerticalBeehiveExist(const Grid<T>& grid, int row, int col) const {
+        if (row + 2 >= grid.getRows() || col + 3 >= grid.getColumns()) return false;
+        return
+            grid.getCellState(row, col + 1)
+            && grid.getCellState(row + 1, col)
+            && grid.getCellState(row + 1, col + 2)
+            && grid.getCellState(row + 2, col)
+            && grid.getCellState(row + 2, col + 2)
+            && grid.getCellState(row + 3, col + 1)
+            && grid.countAliveNeighbors(row, col + 1) == 2
+            && grid.countAliveNeighbors(row + 1, col) == 2
+            && grid.countAliveNeighbors(row + 1, col + 2) == 2
+            && grid.countAliveNeighbors(row + 2, col) == 2
+            && grid.countAliveNeighbors(row + 2, col + 2) == 2
+            && grid.countAliveNeighbors(row + 3, col + 1) == 2;
     }
 };
 
@@ -293,9 +310,6 @@ public:
         for (int i = 0; i < grid.getRows(); i++) {
             for (int j = 0; j < grid.getColumns() - 2; j++) {
                 if (doesHorizontalBlinkerExist(grid, i, j)) {
-                    std::cout << "Horizontal blinker detected at (" << i << "," << j << ")" << std::endl;
-
-                    // Simulate two steps and check if the pattern returns to its original configuration
                     Grid<T> nextGrid = grid;
                     nextGrid.updateGrid();
                     nextGrid.updateGrid();
@@ -311,25 +325,21 @@ public:
             for (int j = 0; j < grid.getColumns(); j++) {
 
                 if (doesVerticalBlinkerExist(grid, i, j)) {
-                    std::cout << "Vertical blinker detected at (" << i << "," << j << ")" << std::endl;
-
                     Grid<T> nextGrid = grid;
-                    nextGrid.updateGrid();  // First update
-                    nextGrid.updateGrid();  // Second update
-
+                    nextGrid.updateGrid();
+                    nextGrid.updateGrid();
 
                     if (doesVerticalBlinkerExist(nextGrid, i, j)) {
-                        return true;  // Full oscillation cycle detected
+                        return true;
                     }
                 }
             }
         }
 
-        return false;  // No blinker pattern found
+        return false;
     }
 
 private:
-    // Detect horizontal blinker
     bool doesHorizontalBlinkerExist(const Grid<T>& grid, int row, int col) const {
         if (col + 2 >= grid.getColumns()) return false;
         return
@@ -340,8 +350,6 @@ private:
             grid.countAliveNeighbors(row, col + 1) == 2 &&
             grid.countAliveNeighbors(row, col + 2) == 1;
     }
-
-    // Detect vertical blinker
     bool doesVerticalBlinkerExist(const Grid<T>& grid, int row, int col) const {
         if (row + 2 >= grid.getRows()) return false;
         return
@@ -361,31 +369,22 @@ public:
     ToadPattern() : Pattern<T>("Toad") {}
 
     bool detectPattern(const Grid<T>& grid) const override {
-        for (int i = 0; i < grid.getRows() - 2; i++) {
+        for (int i = 0; i < grid.getRows() - 4; i++) {
             for (int j = 0; j < grid.getColumns() - 4; j++) {
-                // Check for the first configuration of Toad (S shape)
                 if (doesToadExist(grid, i, j)) {
-                    std::cout << "First Toad config detected at (" << i << "," << j << ")" << std::endl;
-
-                    // Simulate two steps and check if the pattern returns to its original configuration
                     Grid<T> nextGrid = grid;
-                    nextGrid.updateGrid();  // First update
-                    std::cout << "Grid after first update:\n" << nextGrid << std::endl;
-
-                    nextGrid.updateGrid();  // Second update
-                    std::cout << "Grid after second update:\n" << nextGrid << std::endl;
-
+                    nextGrid.updateGrid();
+                    nextGrid.updateGrid();
                     if (doesToadExist(nextGrid, i, j)) {
-                        return true;  // Full cycle detected
+                        return true;
                     }
                 }
             }
         }
-        return false;  // No Toad pattern found
+        return false;
     }
 
 private:
-    // Check if the first Toad configuration (staggered "S" shape) exists at the given position
     bool doesToadExist(const Grid<T>& grid, int row, int col) const {
         return doesHorizontalToadExist(grid, row, col) || doesFlippedHorizontalToadExist(grid, row, col) ||
             doesVerticalToadExist(grid, row, col) || doesFlippedVerticalToadExist(grid, row, col);
@@ -474,19 +473,22 @@ public:
     bool detectPattern(const Grid<T>& grid) const override {
         for (int i = 0; i < grid.getRows() - 2; i++) {
             for (int j = 0; j < grid.getColumns() - 2; j++) {
-                // Check for the glider's first configuration
                 if (doesGliderExist(grid, i, j)) {
-
                     Grid<T> nextGrid = grid;
-                    for (int step = 0; step < 4; ++step) {
+                    for (int step = 0; step < 4; step++) {
                         nextGrid.updateGrid();
                     }
-                    if (doesGlider1Exist(nextGrid, i + 1, j + 1)
-                        || doesGlider2Exist(nextGrid, i - 1, j + 1)
-                        || doesGlider3Exist(nextGrid, i + 1, j - 1)
-                        || doesGlider4Exist(nextGrid, i - 1, j - 1)) {
-                        return true; // Full cycle and diagonal shift detected
+
+                    if ((i + 1 < nextGrid.getRows()) && (j + 1 < nextGrid.getColumns()) &&
+                        (i - 1 >= 0) && (j - 1 >= 0)) {
+                        if (doesGlider1Exist(nextGrid, i + 1, j + 1)
+                            || doesGlider2Exist(nextGrid, i - 1, j + 1)
+                            || doesGlider3Exist(nextGrid, i + 1, j - 1)
+                            || doesGlider4Exist(nextGrid, i - 1, j - 1)) {
+                            return true;
+                        }
                     }
+
 
                 }
             }
@@ -498,16 +500,15 @@ private:
     bool doesGliderExist(const Grid<T>& grid, int row, int col) const {
         return doesGlider1Exist(grid, row, col) || doesGlider2Exist(grid, row, col) || doesGlider3Exist(grid, row, col) || doesGlider4Exist(grid, row, col);
     }
-    // Check if the given position contains the glider's starting configuration
     bool doesGlider1Exist(const Grid<T>& grid, int row, int col) const {
         if (row + 2 >= grid.getRows() || col + 2 >= grid.getColumns()) {
             return false;
         }
-        return grid.getCellState(row + 1, col) &&      
-            grid.getCellState(row + 2, col + 1) &&   
-            grid.getCellState(row, col + 2) &&       
-            grid.getCellState(row + 1, col + 2) &&   
-            grid.getCellState(row + 2, col + 2) &&    
+        return grid.getCellState(row + 1, col) &&
+            grid.getCellState(row + 2, col + 1) &&
+            grid.getCellState(row, col + 2) &&
+            grid.getCellState(row + 1, col + 2) &&
+            grid.getCellState(row + 2, col + 2) &&
 
             grid.countAliveNeighbors(row + 1, col) == 1 &&
             grid.countAliveNeighbors(row + 2, col + 1) == 3 &&
@@ -528,7 +529,6 @@ private:
             grid.getCellState(row + 1, col + 2) &&
             grid.getCellState(row + 2, col + 2) &&
 
-            // Ensure that neighbors match the glider's requirement (isolated)
             grid.countAliveNeighbors(row + 1, col) == 1 &&
             grid.countAliveNeighbors(row, col + 1) == 3 &&
             grid.countAliveNeighbors(row, col + 2) == 2 &&
@@ -538,20 +538,16 @@ private:
 
     bool doesGlider3Exist(const Grid<T>& grid, int row, int col) const {
 
-        // Check if row + 2 and col + 1 are within bounds
         if (row + 2 >= grid.getRows() || col + 2 >= grid.getColumns()) {
-            cout << "HII";
             return false;
         }
 
         return
-            grid.getCellState(row, col) &&          
-            grid.getCellState(row + 1, col) &&      
-            grid.getCellState(row + 2, col) &&      
-            grid.getCellState(row + 2, col + 1) && 
-            grid.getCellState(row + 1, col + 2) && 
-
-            // Ensure the neighbor counts match the expected glider configuration
+            grid.getCellState(row, col) &&
+            grid.getCellState(row + 1, col) &&
+            grid.getCellState(row + 2, col) &&
+            grid.getCellState(row + 2, col + 1) &&
+            grid.getCellState(row + 1, col + 2) &&
             grid.countAliveNeighbors(row, col) == 1 &&
             grid.countAliveNeighbors(row + 1, col) == 3 &&
             grid.countAliveNeighbors(row + 2, col) == 2 &&
@@ -565,13 +561,11 @@ private:
         }
 
         return
-            grid.getCellState(row, col) &&          
-            grid.getCellState(row + 1, col) &&      
-            grid.getCellState(row + 2, col) &&      
-            grid.getCellState(row + 1, col) &&  
-            grid.getCellState(row + 1, col + 2) &&  
-
-            // Ensure the neighbor counts match the expected glider configuration
+            grid.getCellState(row, col) &&
+            grid.getCellState(row + 1, col) &&
+            grid.getCellState(row + 2, col) &&
+            grid.getCellState(row + 1, col) &&
+            grid.getCellState(row + 1, col + 2) &&
             grid.countAliveNeighbors(row, col) == 2 &&
             grid.countAliveNeighbors(row + 1, col) == 3 &&
             grid.countAliveNeighbors(row + 2, col) == 1 &&
@@ -588,36 +582,41 @@ public:
 
     bool detectPattern(const Grid<T>& grid) const override {
         for (int i = 0; i < grid.getRows() - 4; i++) {
-            for (int j = 0; j < grid.getColumns() - 5; j++) {
-                // Check for the LWSS configuration
-                if (doesLWSS1Exist(grid, i, j)) {
-                    //Grid<T> nextGrid = grid;
-                    //for (int step = 0; step < 4; ++step) {
-                    //    nextGrid.updateGrid();
-                    //}
-                    //if (doesLWSS1Exist(nextGrid, i, j - 2)
-                    //    || doesLWSS2Exist(nextGrid, i, j + 2)
-                    //    || doesLWSS3Exist(nextGrid, i, j + 2)
-                    //    || doesLWSS4Exist(nextGrid, i, j - 2)) {
-                    //    return true; // Full cycle and horizontal shift detected
-                    //}
-                    //
-
+            for (int j = 0; j < grid.getColumns() - 4; j++) {
+                if (doesLWSS1Exist(grid, i, j) || doesLWSS2Exist(grid, i, j) || doesLWSS3Exist(grid, i, j)
+                    || doesLWSS4Exist(grid, i, j) || doesLWSS5Exist(grid, i, j)
+                    || doesLWSS6Exist(grid, i, j) || doesLWSS7Exist(grid, i, j) || doesLWSS8Exist(grid, i, j)) {
                     return true;
+                    /*Grid<T> nextGrid = grid;
+                    for (int step = 0; step < 4; ++step) {
+                        nextGrid.updateGrid();
+                    }
+                    if ((i + 2 < nextGrid.getRows()) && (j + 2 < nextGrid.getColumns()) &&
+                        (i - 2 >= 0) && (j - 2 >= 0)) {
+
+                        if (doesLWSS1Exist(nextGrid, i, j - 2)
+                            || doesLWSS2Exist(nextGrid, i, j + 2)
+                            || doesLWSS3Exist(nextGrid, i, j + 2)
+                            || doesLWSS4Exist(nextGrid, i, j - 2)
+                            || doesLWSS5Exist(nextGrid, i - 2, j)
+                            || doesLWSS6Exist(nextGrid, i - 2, j)
+                            || doesLWSS7Exist(nextGrid, i - 2, j)
+                            || doesLWSS8Exist(nextGrid, i + 2, j)) {
+                            return true;
+                        }
+                    }*/
                 }
             }
         }
         return false;
     }
 
+
 private:
-    // Check if the LWSS pattern exists at the given location
     bool doesLWSS1Exist(const Grid<T>& grid, int row, int col) const {
         if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
-            std::cout << "Out of bounds at (" << row << "," << col << ")" << std::endl;
             return false;
         }
-
         return
             grid.getCellState(row, col + 1) &&
             grid.getCellState(row, col + 4) &&
@@ -628,8 +627,6 @@ private:
             grid.getCellState(row + 3, col + 1) &&
             grid.getCellState(row + 3, col + 2) &&
             grid.getCellState(row + 3, col + 3) &&
-
-
             grid.countAliveNeighbors(row, col + 1) == 1 &&
             grid.countAliveNeighbors(row, col + 4) == 0 &&
             grid.countAliveNeighbors(row + 1, col) == 2 &&
@@ -646,7 +643,6 @@ private:
         if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
             return false;
         }
-
         return
             grid.getCellState(row, col) &&
             grid.getCellState(row, col + 3) &&
@@ -657,7 +653,6 @@ private:
             grid.getCellState(row + 3, col + 2) &&
             grid.getCellState(row + 3, col + 3) &&
             grid.getCellState(row + 3, col + 4) &&
-
             grid.countAliveNeighbors(row, col) == 0 &&
             grid.countAliveNeighbors(row, col + 3) == 1 &&
             grid.countAliveNeighbors(row + 1, col + 4) == 2 &&
@@ -673,9 +668,7 @@ private:
         if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
             return false;
         }
-
         return
-
             grid.getCellState(row, col + 1) &&
             grid.getCellState(row, col + 2) &&
             grid.getCellState(row, col + 3) &&
@@ -685,8 +678,6 @@ private:
             grid.getCellState(row + 2, col + 4) &&
             grid.getCellState(row + 3, col) &&
             grid.getCellState(row + 3, col + 3) &&
-
-
             grid.countAliveNeighbors(row, col + 1) == 2 &&
             grid.countAliveNeighbors(row, col + 2) == 2 &&
             grid.countAliveNeighbors(row, col + 3) == 3 &&
@@ -702,21 +693,16 @@ private:
         if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
             return false;
         }
-
         return
             grid.getCellState(row, col) &&
             grid.getCellState(row, col + 1) &&
             grid.getCellState(row, col + 2) &&
             grid.getCellState(row, col + 3) &&
-
             grid.getCellState(row + 1, col) &&
             grid.getCellState(row + 1, col + 4) &&
-
             grid.getCellState(row + 2, col) &&
-
             grid.getCellState(row + 3, col + 1) &&
             grid.getCellState(row + 3, col + 4) &&
-
             grid.countAliveNeighbors(row, col) == 2 &&
             grid.countAliveNeighbors(row, col + 1) == 3 &&
             grid.countAliveNeighbors(row, col + 2) == 2 &&
@@ -729,30 +715,20 @@ private:
     }
 
     bool doesLWSS5Exist(const Grid<T>& grid, int row, int col) const {
-        if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
+        if (row + 4 >= grid.getRows() || col + 3 >= grid.getColumns()) {
             return false;
         }
 
         return
             grid.getCellState(row, col) &&
             grid.getCellState(row, col + 2) &&
-
-
             grid.getCellState(row + 1, col + 3) &&
-
-
             grid.getCellState(row + 2, col + 3) &&
-
-
             grid.getCellState(row + 3, col) &&
             grid.getCellState(row + 3, col + 3) &&
-
-
             grid.getCellState(row + 4, col + 1) &&
             grid.getCellState(row + 4, col + 2) &&
             grid.getCellState(row + 4, col + 3) &&
-
-
             grid.countAliveNeighbors(row, col) == 0 &&
             grid.countAliveNeighbors(row, col + 2) == 1 &&
             grid.countAliveNeighbors(row + 1, col + 3) == 2 &&
@@ -765,27 +741,19 @@ private:
     }
 
     bool doesLWSS6Exist(const Grid<T>& grid, int row, int col) const {
-        if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
+        if (row + 4 >= grid.getRows() || col + 3 >= grid.getColumns()) {
             return false;
         }
-
         return
-
             grid.getCellState(row, col + 1) &&
             grid.getCellState(row, col + 3) &&
-
             grid.getCellState(row + 1, col) &&
-
             grid.getCellState(row + 2, col) &&
-
             grid.getCellState(row + 3, col) &&
             grid.getCellState(row + 3, col + 3) &&
-
             grid.getCellState(row + 4, col) &&
             grid.getCellState(row + 4, col + 1) &&
             grid.getCellState(row + 4, col + 2) &&
-
-
             grid.countAliveNeighbors(row, col + 1) == 1 &&
             grid.countAliveNeighbors(row, col + 3) == 0 &&
             grid.countAliveNeighbors(row + 1, col) == 2 &&
@@ -798,29 +766,20 @@ private:
     }
 
     bool doesLWSS7Exist(const Grid<T>& grid, int row, int col) const {
-        if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
+        if (row + 4 >= grid.getRows() || col + 3 >= grid.getColumns()) {
             return false;
         }
 
         return
-
             grid.getCellState(row, col) &&
             grid.getCellState(row, col + 1) &&
             grid.getCellState(row, col + 2) &&
-
             grid.getCellState(row + 1, col) &&
             grid.getCellState(row + 1, col + 3) &&
-
-
             grid.getCellState(row + 2, col) &&
-
-
             grid.getCellState(row + 3, col) &&
-
             grid.getCellState(row + 4, col + 1) &&
             grid.getCellState(row + 4, col + 3) &&
-
-
             grid.countAliveNeighbors(row, col) == 2 &&
             grid.countAliveNeighbors(row, col + 1) == 3 &&
             grid.countAliveNeighbors(row, col + 2) == 2 &&
@@ -833,27 +792,19 @@ private:
     }
 
     bool doesLWSS8Exist(const Grid<T>& grid, int row, int col) const {
-        if (row + 3 >= grid.getRows() || col + 4 >= grid.getColumns()) {
+        if (row + 4 >= grid.getRows() || col + 3 >= grid.getColumns()) {
             return false;
         }
-
         return
             grid.getCellState(row, col + 1) &&
             grid.getCellState(row, col + 2) &&
             grid.getCellState(row, col + 3) &&
-
             grid.getCellState(row + 1, col) &&
             grid.getCellState(row + 1, col + 3) &&
-
-
             grid.getCellState(row + 2, col + 3) &&
-
             grid.getCellState(row + 3, col + 3) &&
-
             grid.getCellState(row + 4, col) &&
             grid.getCellState(row + 4, col + 2) &&
-
-
             grid.countAliveNeighbors(row, col + 1) == 2 &&
             grid.countAliveNeighbors(row, col + 2) == 3 &&
             grid.countAliveNeighbors(row, col + 3) == 2 &&
@@ -863,8 +814,6 @@ private:
             grid.countAliveNeighbors(row + 3, col + 3) == 2 &&
             grid.countAliveNeighbors(row + 4, col) == 0 &&
             grid.countAliveNeighbors(row + 4, col + 2) == 1;
-
-
     }
 
 };
@@ -884,48 +833,12 @@ public:
     Game() : grid(nullptr), initialGrid(nullptr), rows(0), columns(0), numAliveCells(0), steps(0), stepsCount(0) {}
 
     ~Game() {
-        delete grid;  // Clean up dynamically allocated memory
+        delete grid;
         delete initialGrid;
     }
 
-    void initializeLWSS1Pattern() {
-        // Ensure the grid is cleaned before placing the LWSS1 pattern
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < columns; ++j) {
-                grid->getCell(i, j).setDead();
-            }
-        }
-
-        // Place the LWSS1 pattern (relative to the top-left of the grid)
-        if (rows >= 5 && columns >= 4) {
-            // First row
-            grid->getCell(0, 1).setAlive();  // 0,1 (alive)
-            grid->getCell(0, 4).setAlive();  // 0,4 (alive)
-
-            // Second row
-            grid->getCell(1, 0).setAlive();  // 1,0 (alive)
-
-            // Third row
-            grid->getCell(2, 0).setAlive();  // 2,0 (alive)
-            grid->getCell(2, 4).setAlive();  // 2,4 (alive)
-
-            // Fourth row
-            grid->getCell(3, 0).setAlive();  // 3,0 (alive)
-            grid->getCell(3, 1).setAlive();  // 3,1 (alive)
-            grid->getCell(3, 2).setAlive();  // 3,2 (alive)
-            grid->getCell(3, 3).setAlive();  // 3,3 (alive)
-        }
-        else {
-            std::cout << "Grid is too small for LWSS7 pattern!" << std::endl;
-        }
-    }
-
-
-
-
 
     void start() {
-
         cout << "How many rows would you like?" << endl;
         cin >> this->rows;
         cout << "How many columns would you like?" << endl;
@@ -944,14 +857,13 @@ public:
         initialGrid = new Grid<Cell>(rows, columns);
         *initialGrid = *grid;
 
-        stepsCount = 0; // reset when starting new game
+        stepsCount = 0;
     }
 
     void restartGame() {
         if (initialGrid != nullptr) {
-            // Reset the current grid to the saved initial grid
             *grid = *initialGrid;
-            stepsCount = 0;  // Reset the steps count
+            stepsCount = 0;
             cout << "Game has been restarted with the initial configuration." << endl;
         }
         else {
@@ -963,12 +875,12 @@ public:
     void simulate() {
         string continueOption = "y";
 
-        cout << "\033[H\033[J";  // Clear the screen and move the cursor to the top-left corner
+        cout << "\033[H\033[J";
         cout << *grid;
 
         while (continueOption == "y" && stepsCount < steps) {
 
-            cout << "Would you like to continue next step or save the game? (y/n). To reset press R: ";
+            cout << "Would you like to continue next step (y/n) or save the game (s) ? . To reset press (r): ";
             cin >> continueOption;
 
             while (continueOption != "y" && continueOption != "n" && continueOption != "s" && continueOption != "r") {
@@ -998,28 +910,25 @@ public:
                 grid->updateGrid();
                 stepsCount++;
 
-                cout << "\033[H";  // Move cursor back to the top-left corner without clearing the screen
-                cout << *grid;  // Reprint the grid in place
+                cout << "\033[H";
+                cout << *grid;
 
                 if (stepsCount >= steps) {
                     cout << "Maximum steps have been reached. Simulation ended." << endl;
                     break;
                 }
             }
-
             if (continueOption == "r") {
-                restartGame();  // Call the restartGame method
+                restartGame();
                 simulate();
                 return;
             }
         }
-
         if (continueOption == "n") {
             cout << "Simulation stopped by user." << endl;
         }
 
         cout << *grid;
-
         delete grid;
         grid = nullptr;
     }
@@ -1032,19 +941,19 @@ public:
             cerr << "Error" << endl;
             return;
         }
-        inFile >> rows >> columns >> stepsCount >> steps; // learn this (read grid dimensions, steps count and total steps)
+        inFile >> rows >> columns >> stepsCount >> steps;
 
         delete grid;
         grid = new Grid<Cell>(rows, columns);
         int cellStateInt;
         for (int i = 0; i < rows; i++) {
             for (int j = 0; j < columns; j++) {
-                inFile >> cellStateInt;  // Read an int, 1 for alive, 0 for dead
+                inFile >> cellStateInt;
                 if (cellStateInt == 1) {
-                    grid->getCell(i, j).setAlive();  // Set cell alive
+                    grid->getCell(i, j).setAlive();
                 }
                 else {
-                    grid->getCell(i, j).setDead();   // Set cell dead
+                    grid->getCell(i, j).setDead();
                 }
             }
         }
@@ -1054,306 +963,27 @@ public:
             delete initialGrid;
         }
         initialGrid = new Grid<Cell>(*grid);
-
         cout << "Game has been loaded from " << file << endl;
 
     }
 
     void saveGame(string file) {
-
         ofstream outFile(file);
         if (!outFile) {
             cerr << "Error" << endl;
             return;
         }
         outFile << rows << " " << columns << " " << stepsCount << " " << steps << endl;
-        // Save the grid state (alive or dead for each cell)
         for (int i = 0; i < rows; ++i) {
             for (int j = 0; j < columns; ++j) {
-                outFile << (grid->getCellState(i, j) ? 1 : 0) << " ";  // Save 1 for alive, 0 for dead
+                outFile << (grid->getCellState(i, j) ? 1 : 0) << " ";
             }
             outFile << endl;
         }
-
         outFile.close();
         cout << "Game saved to " << file << endl;
 
     }
-
-    void findLowestERNForBlock() {
-        BlockPattern<Cell> blockPattern;
-        int minERN = INT_MAX;
-        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
-        Grid<Cell>* grid = nullptr; // Declare grid pointer
-
-        // Experiment with different grid sizes
-        for (int rows = 2; rows <= 50; rows += 1) { // Start at 2x2 grid, increment by 1
-            for (int columns = 2; columns <= 50; columns += 1) {
-                for (int aliveCells = 1; aliveCells <= (rows * columns) / 2; aliveCells++) { // Test with different number of alive cells
-
-                    // Clean up the previous grid to avoid memory leaks
-                    if (grid) {
-                        delete grid;
-                        grid = nullptr;
-                    }
-
-                    // Initialize grid
-                    grid = new Grid<Cell>(rows, columns); // Dynamically allocate a new grid
-                    grid->initializeGrid(aliveCells); // Randomly populate grid with alive cells
-
-                    // Debugging output to show the current experiment details
-                    std::cout << "Checking Grid Size: " << rows << "x" << columns
-                        << ", Alive Cells: " << aliveCells << std::endl;
-
-                    // Check if Block pattern is detected
-                    if (blockPattern.detectPattern(*grid)) { // Pass grid by reference
-                        int ern = rows + columns + aliveCells;  // Calculate ERN
-                        std::cout << "Block pattern detected! ERN: " << ern << std::endl; // Debugging output when pattern is found
-                        if (ern < minERN) {
-                            minERN = ern;
-                            bestRows = rows;
-                            bestColumns = columns;
-                            bestAliveCells = aliveCells;
-                        }
-                    }
-                    else {
-                        std::cout << "No Block pattern detected for this configuration." << std::endl; // Debugging output if no pattern is found
-                    }
-                }
-            }
-        }
-
-        // Output the lowest ERN and corresponding grid size
-        if (minERN < INT_MAX) {
-            std::cout << "Lowest ERN for Block pattern: " << minERN << std::endl;
-            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
-            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
-        }
-        else {
-            std::cout << "Block pattern not found within the tested grid sizes." << std::endl;
-        }
-
-        // Clean up at the end of the function to avoid memory leaks
-        if (grid) {
-            delete grid;
-            grid = nullptr;
-        }
-    }
-
-
-   
-
-
-   
-
-
-    //void displayMenu() {
-    //    int mainChoice;
-    //    int choice;
-    //    string filename;
-    //    cout << "===== Main Menu =====" << endl;
-    //    cout << "1. Question 1: Conway's Game of Life" << endl;
-    //    cout << "2. Question 2: Run experiment to find a Block or Beehive" << endl;
-    //    cout << "3. Question 3: Run experiment to find a Blinker or Toad" << endl;
-    //    cout << "4. Question 4: Run experiment to find a Glider or LWSS" << endl;
-    //    cout << "5. Question 5: Finding ERN" << endl;
-    //    cout << "6. Exit" << endl;
-    //    cout << "Enter your choice: ";
-
-    //    cin >> mainChoice;
-
-    //    switch (mainChoice) {
-    //    case 1:
-    //        while (true) {
-    //            cout << "===== Conway's Game of Life =====" << endl;
-    //            cout << "1. Start a new game" << endl;
-    //            cout << "2. Load game" << endl;
-    //            cout << "3. Exit" << endl;
-    //            cout << "Enter your choice: ";
-    //            cin >> choice;
-
-    //            switch (choice) {
-    //            case 1:
-    //                start();  // Start a new game
-    //                simulate();
-    //                break;
-    //            case 2:
-    //                cout << "Enter the filename to load from: ";
-    //                cin >> filename;
-    //                loadGame(filename);  // Load the game from the given filename
-    //                simulate();  // After loading, simulate the game
-    //                break;
-    //            case 3:
-    //                cout << "Exiting game." << endl;
-    //                return;
-    //            default:
-    //                cout << "Invalid choice! Try again." << endl;
-    //                break;
-    //            }
-    //        }
-    //        break;
-    //    case 2:
-    //        runExperiment2();
-    //        break;
-    //    case 3:
-    //        runExperiment3();
-    //        break;
-    //    case 4:
-    //        runExperiment4();
-    //        break;
-    //    case 5:
-    //        while (true) {
-    //            cout << "1. Block" << endl;
-    //            cout << "2. Beehive" << endl;
-    //            cout << "3. Blinker" << endl;
-    //            cout << "4. Toad" << endl;
-    //            cout << "5. Glider " << endl;
-    //            cout << "6. LWSS " << endl;
-    //            cin >> choice;
-
-    //            switch (choice) {
-    //            case 1:
-    //                findLowestERNForBlock();
-    //                break;
-    //            case 2:
-    //              
-    //                break;
-    //            case 3:
-    //               
-    //                return;
-
-    //            case 4:
-
-    //                return;
-
-    //            case 5:
-
-    //                return;
-
-    //            case 6:
-    //                return;
-
-    //            default:
-    //                cout << "Invalid choice! Try again." << endl;
-    //                break;
-    //            }
-    //        }
-
-
-    //    default:
-    //        cout << "Invalid choice! Try again." << endl;
-    //        break;
-
-    //    }
-
-    //}
-
-void displayMenu() {
-    int mainChoice;
-    int choice;
-    string filename;
-    cout << "===== Main Menu =====" << endl;
-    cout << "1. Question 1: Conway's Game of Life" << endl;
-    cout << "2. Question 2: Run experiment to find a Block or Beehive" << endl;
-    cout << "3. Question 3: Run experiment to find a Blinker or Toad" << endl;
-    cout << "4. Question 4: Run experiment to find a Glider or LWSS" << endl;
-    cout << "5. Question 5: Finding ERN" << endl;
-    cout << "6. Exit" << endl;
-    cout << "Enter your choice: ";
-
-    cin >> mainChoice;
-
-    switch (mainChoice) {
-    case 1:
-        while (true) {
-            cout << "===== Conway's Game of Life =====" << endl;
-            cout << "1. Start a new game" << endl;
-            cout << "2. Load game" << endl;
-            cout << "3. Exit" << endl;
-            cout << "Enter your choice: ";
-            cin >> choice;
-
-            switch (choice) {
-            case 1:
-                start();  // Start a new game
-                simulate();
-                break;
-            case 2:
-                cout << "Enter the filename to load from: ";
-                cin >> filename;
-                loadGame(filename);  // Load the game from the given filename
-                simulate();  // After loading, simulate the game
-                break;
-            case 3:
-                cout << "Exiting game." << endl;
-                return;
-            default:
-                cout << "Invalid choice! Try again." << endl;
-                break;
-            }
-        }
-        break;
-    case 2:
-        runExperiment2();
-        break;
-    case 3:
-        runExperiment3();
-        break;
-    case 4:
-        runExperiment4();
-        break;
-    case 5:
-        while (true) {
-            cout << "===== ERN Calculation =====" << endl;
-            cout << "1. Block" << endl;
-            cout << "2. Beehive" << endl;
-            cout << "3. Blinker" << endl;
-            cout << "4. Toad" << endl;
-            cout << "5. Glider" << endl;
-            cout << "6. LWSS" << endl;
-            cout << "7. Exit to main menu" << endl;  // Allow user to exit the ERN loop
-            cout << "Enter your choice: ";
-            cin >> choice;
-
-            switch (choice) {
-            case 1:
-                cout << "1 is called" << endl;
-                findLowestERNForBlock();
-                break;
-            case 2:
-                // Call method to find ERN for Beehive
-                break;
-            case 3:
-                // Call method to find ERN for Blinker
-                break;
-            case 4:
-                // Call method to find ERN for Toad
-                break;
-            case 5:
-                // Call method to find ERN for Glider
-                break;
-            case 6:
-                // Call method to find ERN for LWSS
-                break;
-            case 7:
-                return;  // Exit to the main menu
-            default:
-                cout << "Invalid choice! Try again." << endl;
-                break;
-            }
-        }
-        break;
-    case 6:
-        cout << "Exiting program." << endl;
-        exit(0);
-        break;
-    default:
-        cout << "Invalid choice! Try again." << endl;
-        break;
-    }
-}
-
-
 
     void runExperiment2() {
         BlockPattern<Cell> BlockPattern;
@@ -1361,14 +991,14 @@ void displayMenu() {
         int experimentCount = 0;
         bool patternFound = false;
 
-        rows = 30;
-        columns = 30;
+        rows = 40;
+        columns = 40;
         numAliveCells = 150;
 
-        const int maxIterationsPerExperiment = 100;  // Safeguard to prevent infinite loops
-        const int maxExperiments = 1000;  // Limit the number of total experiments
+        const int maxIterationsPerExperiment = 100;
+        const int maxExperiments = 1000;
 
-        std::srand(static_cast<unsigned int>(std::time(0)));  // Seed random generator
+        std::srand(static_cast<unsigned int>(std::time(0)));
 
 
         while (!patternFound && experimentCount < maxExperiments) {
@@ -1379,14 +1009,14 @@ void displayMenu() {
             }
             grid = new Grid<Cell>(rows, columns);
             grid->initializeGrid(numAliveCells);
-            cout << "Starting experiment " << experimentCount << endl;  // Debugging output
+            cout << "Starting experiment " << experimentCount << endl;
 
             int iterationCount = 0;
             bool isSame = false;
-            Grid<Cell>* previousGrid = new Grid<Cell>(rows, columns); // previous grid
+            Grid<Cell>* previousGrid = new Grid<Cell>(rows, columns);
 
-            vector<Grid<Cell>> historyGrids;  // To store grids from each iteration (by value, no pointers)
-            historyGrids.push_back(*grid);  // Store the initial grid
+            vector<Grid<Cell>> historyGrids;
+            historyGrids.push_back(*grid);
 
             while (!patternFound && iterationCount < maxIterationsPerExperiment && !isSame) {
                 iterationCount++;
@@ -1394,14 +1024,11 @@ void displayMenu() {
                 *previousGrid = *grid;
 
                 grid->updateGrid();
-                historyGrids.push_back(*grid);  // Store the updated grid (by value)
-
+                historyGrids.push_back(*grid);
 
                 if (*grid == *previousGrid) {
-                    cout << "Grid stabilized after " << iterationCount << " iterations in experiment " << experimentCount << "." << endl;
                     isSame = true;
                 }
-                cout << "Iteration " << iterationCount << " for experiment " << experimentCount << endl;
 
                 if (BeehivePattern.detectPattern(*grid)) {
                     patternFound = true;
@@ -1420,22 +1047,11 @@ void displayMenu() {
                 cout << "Pattern found! Displaying the grids from the start to the point where the pattern is detected:" << endl;
                 for (size_t idx = 0; idx < historyGrids.size(); ++idx) {
                     cout << "Grid at iteration " << idx << ":" << endl;
-                    cout << historyGrids[idx];  // Print each stored grid
+                    cout << historyGrids[idx];
                 }
             }
-            else {
-                cout << "No block pattern found in experiment " << experimentCount
-                    << " after " << iterationCount << " iterations." << endl;
 
-
-            }
-            if (iterationCount >= maxIterationsPerExperiment) {
-                cout << "Maximum iterations reached for experiment " << experimentCount
-                    << ". Continuing to the next experiment." << endl;
-            }
-
-
-            historyGrids.clear();  // Clear the history after each experiment
+            historyGrids.clear();
             delete previousGrid;
             delete grid;
             grid = nullptr;
@@ -1454,12 +1070,12 @@ void displayMenu() {
         int experimentCount = 0;
         bool patternFound = false;
 
-        rows = 30;
-        columns = 30;
+        rows = 40;
+        columns = 40;
         numAliveCells = 150;
 
         const int maxIterationsPerExperiment = 100;
-        const int maxExperiments = 100;
+        const int maxExperiments = 1000;
         std::srand(static_cast<unsigned int>(std::time(0)));
 
         while (!patternFound && experimentCount < maxExperiments) {
@@ -1476,21 +1092,19 @@ void displayMenu() {
             bool isSame = false;
             Grid<Cell>* previousGrid = new Grid<Cell>(rows, columns);
 
-            vector<Grid<Cell>> historyGrids;  // To store grids from each iteration (by value, no pointers)
-            historyGrids.push_back(*grid);  // Store the initial grid
+            vector<Grid<Cell>> historyGrids;
+            historyGrids.push_back(*grid);
 
             while (!patternFound && iterationCount < maxIterationsPerExperiment && !isSame) {
                 iterationCount++;
                 *previousGrid = *grid;
                 grid->updateGrid();
-                historyGrids.push_back(*grid);  // Store the updated grid (by value)
+                historyGrids.push_back(*grid);
 
 
                 if (*grid == *previousGrid) {
-                    cout << "Grid stabilized after " << iterationCount << " iterations in experiment " << experimentCount << "." << endl;
                     isSame = true;
                 }
-                cout << "Iteration " << iterationCount << " for experiment " << experimentCount << endl;
                 if (BlinkerPattern.detectPattern(*grid)) {
                     patternFound = true;
                     cout << "Blinker pattern found after " << experimentCount << " Experiment(s) and " <<
@@ -1508,17 +1122,8 @@ void displayMenu() {
                 cout << "Pattern found! Displaying the grids from the start to the point where the pattern is detected:" << endl;
                 for (size_t idx = 0; idx < historyGrids.size(); ++idx) {
                     cout << "Grid at iteration " << idx << ":" << endl;
-                    cout << historyGrids[idx];  // Print each stored grid
+                    cout << historyGrids[idx];
                 }
-            }
-            else {
-                cout << "No Blinker/Toad pattern found in experiment " << experimentCount
-                    << " after " << iterationCount << " iterations." << endl;
-            }
-
-            if (iterationCount >= maxIterationsPerExperiment) {
-                cout << "Maximum iterations reached for experiment " << experimentCount
-                    << ". Continuing to the next experiment." << endl;
             }
             delete previousGrid;
             delete grid;
@@ -1540,8 +1145,8 @@ void displayMenu() {
         int experimentCount = 0;
         bool patternFound = false;
 
-        rows = 30;
-        columns = 30;
+        rows = 40;
+        columns = 40;
         numAliveCells = 150;
 
         const int maxIterationsPerExperiment = 100;
@@ -1557,38 +1162,32 @@ void displayMenu() {
                 delete grid;
             }
 
-
             grid = new Grid<Cell>(rows, columns);
             grid->initializeGrid(numAliveCells);
-            //initializeLWSS1Pattern();
-            //cout << *grid;
 
             cout << "Starting experiment " << experimentCount << endl;
             int iterationCount = 0;
             bool isSame = false;
             Grid<Cell>* previousGrid = new Grid<Cell>(rows, columns);
 
-            vector<Grid<Cell>> historyGrids;  // To store grids from each iteration (by value, no pointers)
-            historyGrids.push_back(*grid);  // Store the initial grid
+            vector<Grid<Cell>> historyGrids;
+            historyGrids.push_back(*grid);
 
             while (!patternFound && iterationCount < maxIterationsPerExperiment && !isSame) {
                 iterationCount++;
                 *previousGrid = *grid;
                 grid->updateGrid();
-                historyGrids.push_back(*grid);  // Store the updated grid (by value)
-                // comparing current grid with previous grid
+                historyGrids.push_back(*grid);
+
                 if (*grid == *previousGrid) {
-                    cout << "Grid stabilized after " << iterationCount << " iterations in experiment " << experimentCount << "." << endl;
                     isSame = true;
                 }
-                cout << "Iteration " << iterationCount << " for experiment " << experimentCount << endl;
-
-                if (GliderPattern.detectPattern(*grid)) {
+                /*if (GliderPattern.detectPattern(*grid)) {
                     patternFound = true;
                     cout << "Glider pattern found after " << experimentCount << " Experiment(s) and " <<
                         iterationCount << "step(s)!" << endl;
                     break;
-                }
+                }*/
                 if (LWSSPattern.detectPattern(*grid)) {
                     patternFound = true;
                     cout << "LWSS pattern found after " << experimentCount << " Experiment(s) and " <<
@@ -1600,25 +1199,446 @@ void displayMenu() {
                 cout << "Pattern found! Displaying the grids from the start to the point where the pattern is detected:" << endl;
                 for (size_t idx = 0; idx < historyGrids.size(); ++idx) {
                     cout << "Grid at iteration " << idx << ":" << endl;
-                    cout << historyGrids[idx];  // Print each stored grid
+                    cout << historyGrids[idx];
                 }
-            }
-            else {
-                cout << "No Glider/LWSS pattern found in experiment " << experimentCount
-                    << " after " << iterationCount << " iterations." << endl;
-            }
-            if (iterationCount >= maxIterationsPerExperiment) {
-                cout << "Maximum iterations reached for experiment " << experimentCount
-                    << ". Continuing to the next experiment." << endl;
             }
             delete previousGrid;
             delete grid;
             grid = nullptr;
         }
         if (!patternFound) {
-            cout << "Maximum number of experiments reached without finding a Blinker pattern." << endl;
+            cout << "Maximum number of experiments reached without finding a pattern." << endl;
         }
     }
+
+
+    void findLowestERNForBlock() {
+        BlockPattern<Cell> blockPattern;
+        int minERN = INT_MAX;
+        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
+        Grid<Cell>* grid = nullptr;
+
+        // Launch multiple threads to experiment with different configurations
+        auto experimentTask = [&](int startRow, int endRow) {
+            for (int rows = startRow; rows <= endRow; rows++) {
+                for (int columns = 2; columns <= 10; columns++) {
+                    for (int aliveCells = 1; aliveCells <= (rows * columns) / 2; aliveCells++) {
+                        for (int trial = 0; trial < 10; trial++) {
+
+                            // Mutex lock for grid manipulation
+                            std::lock_guard<std::mutex> lock(gridMutex);
+
+                            if (grid) {
+                                delete grid;
+                                grid = nullptr;
+                            }
+                            grid = new Grid<Cell>(rows, columns);
+                            grid->initializeGrid(aliveCells);
+
+                            if (blockPattern.detectPattern(*grid)) {
+                                int ern = rows + columns + aliveCells;
+                                std::cout << "Block pattern detected! ERN: " << ern << std::endl;
+                                if (ern < minERN) {
+                                    minERN = ern;
+                                    bestRows = rows;
+                                    bestColumns = columns;
+                                    bestAliveCells = aliveCells;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            };
+
+        std::thread t1(experimentTask, 2, 5);
+        std::thread t2(experimentTask, 6, 10);
+
+        t1.join();
+        t2.join();
+
+        if (minERN < INT_MAX) {
+            std::cout << "Lowest ERN for Block pattern: " << minERN << std::endl;
+            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
+            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
+        }
+        else {
+            std::cout << "Block pattern not found within the tested grid sizes." << std::endl;
+        }
+
+        if (grid) {
+            delete grid;
+        }
+    }
+
+    void findLowestERNForBeehive() {
+        BeehivePattern<Cell> beehivePattern;
+        int minERN = INT_MAX;
+        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
+        Grid<Cell>* grid = nullptr;
+
+        auto experimentTask = [&](int startRow, int endRow) {
+            for (int rows = startRow; rows <= endRow; rows++) {
+                for (int columns = 6; columns <= 20; columns++) {
+                    for (int aliveCells = 1; aliveCells <= (rows * columns) / 2; aliveCells++) {
+                        for (int trial = 0; trial < 10; trial++) {
+
+                            // Mutex lock for grid manipulation
+                            std::lock_guard<std::mutex> lock(gridMutex);
+
+                            if (grid) {
+                                delete grid;
+                                grid = nullptr;
+                            }
+                            grid = new Grid<Cell>(rows, columns);
+                            grid->initializeGrid(aliveCells);
+
+                            if (beehivePattern.detectPattern(*grid)) {
+                                int ern = rows + columns + aliveCells;
+                                std::cout << "Beehive pattern detected! ERN: " << ern << std::endl;
+                                if (ern < minERN) {
+                                    minERN = ern;
+                                    bestRows = rows;
+                                    bestColumns = columns;
+                                    bestAliveCells = aliveCells;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            };
+
+        std::thread t1(experimentTask, 6, 13);
+        std::thread t2(experimentTask, 14, 20);
+
+        t1.join();
+        t2.join();
+
+        if (minERN < INT_MAX) {
+            std::cout << "Lowest ERN for Beehive pattern: " << minERN << std::endl;
+            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
+            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
+        }
+        else {
+            std::cout << "Beehive pattern not found within the tested grid sizes." << std::endl;
+        }
+
+        if (grid) {
+            delete grid;
+        }
+    }
+
+
+
+    void findLowestERNForBlinker() {
+        BlinkerPattern<Cell> blinkerPattern;
+        int minERN = INT_MAX;
+        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
+        Grid<Cell>* grid = nullptr;
+
+        for (int rows = 3; rows <= 10; rows += 1) {
+            for (int columns = 3; columns <= 10; columns += 1) {
+                for (int aliveCells = 3; aliveCells <= (rows * columns) / 2; aliveCells++) {
+                    for (int trial = 0; trial < 10; trial++) {
+
+                        if (grid) {
+                            delete grid;
+                            grid = nullptr;
+                        }
+
+                        grid = new Grid<Cell>(rows, columns);
+                        grid->initializeGrid(aliveCells);
+
+                        if (blinkerPattern.detectPattern(*grid)) {
+                            int ern = rows + columns + aliveCells;
+                            cout << "Blinker pattern detected! ERN: " << ern << std::endl;
+                            if (ern < minERN) {
+                                minERN = ern;
+                                bestRows = rows;
+                                bestColumns = columns;
+                                bestAliveCells = aliveCells;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (minERN < INT_MAX) {
+            std::cout << "Lowest ERN for Blinker pattern: " << minERN << std::endl;
+            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
+            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
+        }
+        else {
+            std::cout << "Blinker pattern not found within the tested grid sizes." << std::endl;
+        }
+
+        if (grid) {
+            delete grid;
+            grid = nullptr;
+        }
+    }
+
+    void findLowestERNForToad() {
+        ToadPattern<Cell> toadPattern;
+        int minERN = INT_MAX;
+        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
+        Grid<Cell>* grid = nullptr;
+
+        for (int rows = 6; rows <= 15; rows += 1) {
+            for (int columns = 6; columns <= 15; columns += 1) {
+                for (int aliveCells = 6; aliveCells <= (rows * columns) / 2; aliveCells++) {
+
+                    for (int trial = 0; trial < 10; trial++) {
+
+                        if (grid) {
+                            delete grid;
+                            grid = nullptr;
+                        }
+
+                        grid = new Grid<Cell>(rows, columns);
+                        grid->initializeGrid(aliveCells);
+
+                        if (toadPattern.detectPattern(*grid)) {
+                            int ern = rows + columns + aliveCells;
+                            std::cout << "Toad pattern detected! ERN: " << ern << std::endl;
+                            if (ern < minERN) {
+                                minERN = ern;
+                                bestRows = rows;
+                                bestColumns = columns;
+                                bestAliveCells = aliveCells;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (minERN < INT_MAX) {
+            std::cout << "Lowest ERN for Toad pattern: " << minERN << std::endl;
+            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
+            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
+        }
+        else {
+            std::cout << "Toad pattern not found within the tested grid sizes." << std::endl;
+        }
+
+        if (grid) {
+            delete grid;
+            grid = nullptr;
+        }
+    }
+
+    void findLowestERNForGlider() {
+        GliderPattern<Cell> gliderPattern;
+        int minERN = INT_MAX;
+        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
+        Grid<Cell>* grid = nullptr;
+
+        for (int rows = 5; rows <= 15; rows += 1) {
+            for (int columns = 5; columns <= 15; columns += 1) {
+                for (int aliveCells = 5; aliveCells <= (rows * columns) / 2; aliveCells++) {
+
+                    for (int trial = 0; trial < 10; trial++) {
+
+                        if (grid) {
+                            delete grid;
+                            grid = nullptr;
+                        }
+
+                        grid = new Grid<Cell>(rows, columns);
+                        grid->initializeGrid(aliveCells);
+
+                        if (gliderPattern.detectPattern(*grid)) {
+                            int ern = rows + columns + aliveCells;
+                            std::cout << "Glider pattern detected! ERN: " << ern << std::endl;
+                            if (ern < minERN) {
+                                minERN = ern;
+                                bestRows = rows;
+                                bestColumns = columns;
+                                bestAliveCells = aliveCells;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (minERN < INT_MAX) {
+            std::cout << "Lowest ERN for Glider pattern: " << minERN << std::endl;
+            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
+            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
+        }
+        else {
+            std::cout << "Glider pattern not found within the tested grid sizes." << std::endl;
+        }
+
+        if (grid) {
+            delete grid;
+            grid = nullptr;
+        }
+    }
+
+    void findLowestERNForLWSS() {
+        LWSSPattern<Cell> lwssPattern;
+        int minERN = INT_MAX;
+        int bestRows = 0, bestColumns = 0, bestAliveCells = 0;
+        Grid<Cell>* grid = nullptr;
+
+        for (int rows = 11; rows <= 25; rows += 1) {
+            for (int columns = 11; columns <= 25; columns += 1) {
+                for (int aliveCells = 5; aliveCells <= (rows * columns) / 2; aliveCells++) {
+
+
+                    for (int trial = 0; trial < 10; trial++) {
+
+                        if (grid) {
+                            delete grid;
+                            grid = nullptr;
+                        }
+
+                        grid = new Grid<Cell>(rows, columns);
+                        grid->initializeGrid(aliveCells);
+
+                        if (lwssPattern.detectPattern(*grid)) {
+                            int ern = rows + columns + aliveCells;
+                            std::cout << "LWSS pattern detected! ERN: " << ern << std::endl;
+                            if (ern < minERN) {
+                                minERN = ern;
+                                bestRows = rows;
+                                bestColumns = columns;
+                                bestAliveCells = aliveCells;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (minERN < INT_MAX) {
+            std::cout << "Lowest ERN for LWSS pattern: " << minERN << std::endl;
+            std::cout << "Best Grid Size: " << bestRows << "x" << bestColumns << std::endl;
+            std::cout << "Number of Alive Cells: " << bestAliveCells << std::endl;
+        }
+        else {
+            std::cout << "LWSS pattern not found within the tested grid sizes." << std::endl;
+        }
+
+        if (grid) {
+            delete grid;
+        }
+
+    }
+
+
+    void displayMenu() {
+        int mainChoice;
+        int choice;
+        string filename;
+        cout << "===== Main Menu =====" << endl;
+        cout << "1. Question 1: Conway's Game of Life" << endl;
+        cout << "2. Question 2: Run experiment to find a Block or Beehive" << endl;
+        cout << "3. Question 3: Run experiment to find a Blinker or Toad" << endl;
+        cout << "4. Question 4: Run experiment to find a Glider or LWSS" << endl;
+        cout << "5. Question 5: Finding ERN" << endl;
+        cout << "6. Exit" << endl;
+        cout << "Enter your choice: ";
+
+        cin >> mainChoice;
+
+        switch (mainChoice) {
+        case 1:
+            while (true) {
+                cout << "===== Conway's Game of Life =====" << endl;
+                cout << "1. Start a new game" << endl;
+                cout << "2. Load game" << endl;
+                cout << "3. Exit" << endl;
+                cout << "Enter your choice: ";
+                cin >> choice;
+
+                switch (choice) {
+                case 1:
+                    start();
+                    simulate();
+                    break;
+                case 2:
+                    cout << "Enter the filename to load from: ";
+                    cin >> filename;
+                    loadGame(filename);
+                    simulate();
+                    break;
+                case 3:
+                    cout << "Exiting game." << endl;
+                    return;
+                default:
+                    cout << "Invalid choice! Try again." << endl;
+                    break;
+                }
+            }
+            break;
+        case 2:
+            runExperiment2();
+            break;
+        case 3:
+            runExperiment3();
+            break;
+        case 4:
+            runExperiment4();
+            break;
+        case 5:
+            while (true) {
+                cout << "===== ERN Calculation =====" << endl;
+                cout << "1. Block" << endl;
+                cout << "2. Beehive" << endl;
+                cout << "3. Blinker" << endl;
+                cout << "4. Toad" << endl;
+                cout << "5. Glider" << endl;
+                cout << "6. LWSS" << endl;
+                cout << "7. Exit" << endl;
+                cout << "Enter your choice: ";
+                cin >> choice;
+
+                switch (choice) {
+                case 1:
+                    cout << "1 is called" << endl;
+                    findLowestERNForBlock();
+                    break;
+                case 2:
+                    findLowestERNForBeehive();
+                    break;
+                case 3:
+                    findLowestERNForBlinker();
+                    break;
+                case 4:
+                    findLowestERNForToad();
+                    break;
+                case 5:
+                    findLowestERNForGlider();
+                    break;
+                case 6:
+                    findLowestERNForLWSS();
+                    break;
+                case 7:
+                    return;
+                default:
+                    cout << "Invalid choice! Try again." << endl;
+                    break;
+                }
+            }
+            break;
+        case 6:
+            cout << "Exiting program." << endl;
+            exit(0);
+            break;
+        default:
+            cout << "Invalid choice! Try again." << endl;
+            break;
+        }
+    }
+
 };
 
 int main() {
